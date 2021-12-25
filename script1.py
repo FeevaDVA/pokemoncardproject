@@ -916,9 +916,9 @@ labels_map = {
     898: "Calyrex",
 }
 RestClient.configure("c8b6aceb-3e30-4d46-b006-8c57a545f3c6")
+size = 120
 
-
-def urltoimage(url):
+def url_to_image(url):
     print(url)
     response = requests.get(url)
     img = Image.open(BytesIO(response.content))
@@ -929,28 +929,36 @@ def urltoimage(url):
 class CustomPokemonCardDataset(Dataset):
     cards = list
 
-    def __init__(self, d, t, tran, target_tran):
+    def __init__(self, d, t, tran, target):
         super().__init__()
         file = open('dataset')
         self.transform = tran
-        self.target = target_tran
+        self.resize = target
         self.download = d
         self.train = t
-        self.cards = [Card.find('xy1-1'), Card.find('xy1-2')]
+        self.cards = [Card.find('xy1-1'), Card.find('xy1-2'), Card.find('xy1-29'), Card.find('xy1-30'),
+                      Card.find('xy1-42'),
+                      Card.find('xy1-141'), Card.find('xy1-142'),
+                      Card.find('sm12-66'), Card.find('pl1-2'), Card.find('xy1-13'), Card.find('ex14-14'),
+                      Card.find('ex14-2'), Card.find('xy12-1'), Card.find('xy12-2'), Card.find('xy12-21'),
+                      Card.find('xy12-22'), Card.find('xy12-100'), Card.find('xy12-102'), Card.find('sm11-55'),
+                      Card.find('sm11-56'), Card.find('swsh35-1'), Card.find('sm9-25'), Card.find('swshp-SWSH102')]
 
     def __len__(self):
         return len(self.cards)
 
     def __getitem__(self, idx):
         card = self.cards[idx]
-        image = urltoimage(card.images.small)
+        image = url_to_image(card.images.small)
+        image = self.transform(image)
+        image = self.resize(image)
         keys = list(labels_map.keys())
-        vals = list(labels_map.values())
+        values = list(labels_map.values())
 
         name = card.name
         label = 0
 
-        for x in vals:
+        for x in values:
             try:
                 if name.index(x) > 0:
                     label = torch.tensor(keys.index(x))
@@ -962,11 +970,11 @@ class CustomPokemonCardDataset(Dataset):
 
 
 trans = transforms.Compose([transforms.ToTensor()])
-target = transforms.Compose([transforms.ToTensor()])
+target = transforms.Compose([transforms.Resize((330, 240))])
 
 print('getting cards')
 training_data = CustomPokemonCardDataset(True, True, trans, target)
-training_loader = DataLoader(training_data, batch_size=200, shuffle=True)
+training_loader = DataLoader(training_data, batch_size=1, shuffle=True)
 
 print('making model')
 
@@ -974,7 +982,7 @@ print('making model')
 class CardModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(335160, 5240)
+        self.fc1 = nn.Linear(316800, 5240)
         self.fc2 = nn.Linear(5240, 2670)
         self.fc3 = nn.Linear(2670, 898)
 
@@ -994,7 +1002,8 @@ print('finished')
 criterion = nn.NLLLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.01)
 
-num_epochs = 5
+num_epochs = 2
+model.train()
 
 for i in range(num_epochs):
     cum_loss = 0
@@ -1006,7 +1015,6 @@ for i in range(num_epochs):
         loss.backward()
         optimizer.step()
         cum_loss += loss.item()
-
     print(f"Training loss: {cum_loss / len(training_loader)}")
-    torch.save(model, os.path.dirname(os.path.abspath(__file__)))
+torch.save(model, os.path.dirname(os.path.abspath(__file__)) + '\\sweetmodel')
 print('done')

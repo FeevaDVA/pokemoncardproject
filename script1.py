@@ -1,5 +1,9 @@
 import requests
 import torch
+
+torch.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 import os
 from PIL import Image
 from torchvision import transforms
@@ -8,6 +12,9 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch import nn, optim
 import numpy as np
+import numpy as np
+
+np.random.seed(0)
 import urllib
 import cv2 as cv
 from io import BytesIO
@@ -916,12 +923,12 @@ labels_map = {
     898: "Calyrex",
 }
 RestClient.configure("c8b6aceb-3e30-4d46-b006-8c57a545f3c6")
-size = 120
+
 
 def url_to_image(url):
-    print(url)
     response = requests.get(url)
     img = Image.open(BytesIO(response.content))
+    img = img.convert('L')
     img = np.asarray(img)
     return img
 
@@ -937,8 +944,6 @@ class CustomPokemonCardDataset(Dataset):
         self.download = d
         self.train = t
         self.cards = [Card.find('xy1-1'), Card.find('xy1-2'), Card.find('xy1-29'), Card.find('xy1-30'),
-                      Card.find('xy1-42'),
-                      Card.find('xy1-141'), Card.find('xy1-142'),
                       Card.find('sm12-66'), Card.find('pl1-2'), Card.find('xy1-13'), Card.find('ex14-14'),
                       Card.find('ex14-2'), Card.find('xy12-1'), Card.find('xy12-2'), Card.find('xy12-21'),
                       Card.find('xy12-22'), Card.find('xy12-100'), Card.find('xy12-102'), Card.find('sm11-55'),
@@ -952,29 +957,35 @@ class CustomPokemonCardDataset(Dataset):
         image = url_to_image(card.images.small)
         image = self.transform(image)
         image = self.resize(image)
+        image = image.view(1, 79200)
         keys = list(labels_map.keys())
         values = list(labels_map.values())
-
+        print()
         name = card.name
-        label = 0
+        label = torch.tensor(0)
 
         for x in values:
             try:
-                if name.index(x) > 0:
-                    label = torch.tensor(keys.index(x))
-                    break
+                if name.find(x) >= 0:
+                    print('reached')
+                    label = torch.tensor(values.index(x))
             except ValueError:
                 print("", end='')
+
+
+        print(name)
+        print(label.data)
 
         return image, label
 
 
-trans = transforms.Compose([transforms.ToTensor()])
+mean, std = (0.5,), (0.5,)
+trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
 target = transforms.Compose([transforms.Resize((330, 240))])
 
 print('getting cards')
 training_data = CustomPokemonCardDataset(True, True, trans, target)
-training_loader = DataLoader(training_data, batch_size=1, shuffle=True)
+training_loader = DataLoader(training_data, batch_size=15, shuffle=True)
 
 print('making model')
 
@@ -982,21 +993,24 @@ print('making model')
 class CardModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(316800, 5240)
-        self.fc2 = nn.Linear(5240, 2670)
-        self.fc3 = nn.Linear(2670, 898)
+
+        self.fc1 = nn.Linear(79200, 19800)
+        self.fc2 = nn.Linear(19800, 4950)
+        self.fc3 = nn.Linear(4950, 1240)
+        self.fc4 = nn.Linear(1240, 899)
 
     def forward(self, x):
-        x = x.view(x.shape[0], -1)
+        x = x = x.view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = F.relu(self.fc3(x))
+        x = self.fc4(x)
         x = F.log_softmax(x, dim=1)
-
         return x
 
 
 model = CardModel()
+
 
 print('finished')
 criterion = nn.NLLLoss()
@@ -1009,6 +1023,7 @@ for i in range(num_epochs):
     cum_loss = 0
 
     for images, labels in training_loader:
+        torch.cuda.empty_cache()
         optimizer.zero_grad()
         output = model(images)
         loss = criterion(output, labels)

@@ -21,10 +21,11 @@ from io import BytesIO
 from torch.utils.data.dataset import Dataset
 import pickle
 
+#somewhat modified for testing on the a small amount of pokemon
 labels_map = {
-    0: "Trainer",
-    1: "Bulbasaur",
-    2: "Ivysaur",
+    0: "Quilladin",
+    1: "Blastoise",
+    2: "Pikachu",
     3: "Venusaur",
     4: "Charmander",
     5: "Charmeleon",
@@ -943,8 +944,9 @@ class CustomPokemonCardDataset(Dataset):
         self.resize = target
         self.download = d
         self.train = t
+        # a select few cards to train the model on until a complete dataset can be made
         self.cards = [Card.find('xy1-1'), Card.find('xy1-2'), Card.find('xy1-29'), Card.find('xy1-30'),
-                      Card.find('sm12-66'), Card.find('pl1-2'), Card.find('xy1-13'), Card.find('ex14-14'),
+                      Card.find('sm12-66'), Card.find('pl1-2'), Card.find('ex14-14'), Card.find('xy1-13'),
                       Card.find('ex14-2'), Card.find('xy12-1'), Card.find('xy12-2'), Card.find('xy12-21'),
                       Card.find('xy12-22'), Card.find('xy12-100'), Card.find('xy12-102'), Card.find('sm11-55'),
                       Card.find('sm11-56'), Card.find('swsh35-1'), Card.find('sm9-25'), Card.find('swshp-SWSH102')]
@@ -984,12 +986,13 @@ trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, st
 target = transforms.Compose([transforms.Resize((330, 240))])
 
 print('getting cards')
+#creates the custom dataset
 training_data = CustomPokemonCardDataset(True, True, trans, target)
 training_loader = DataLoader(training_data, batch_size=15, shuffle=True)
 
 print('making model')
 
-
+#creates the seperate layers of the neural net
 class CardModel(nn.Module):
     def __init__(self):
         super().__init__()
@@ -997,14 +1000,16 @@ class CardModel(nn.Module):
         self.fc1 = nn.Linear(79200, 19800)
         self.fc2 = nn.Linear(19800, 4950)
         self.fc3 = nn.Linear(4950, 1240)
-        self.fc4 = nn.Linear(1240, 899)
+        self.fc4 = nn.Linear(1240, 670)
+        self.fc5 = nn.Linear(670, 4)
 
     def forward(self, x):
         x = x = x.view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
-        x = self.fc4(x)
+        x = F.relu(self.fc4(x))
+        x = self.fc5(x)
         x = F.log_softmax(x, dim=1)
         return x
 
@@ -1015,10 +1020,11 @@ model = CardModel()
 print('finished')
 criterion = nn.NLLLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.01)
+#number of times that it will train off the set
+num_epochs = 12
 
-num_epochs = 2
 model.train()
-
+#trains the model on the given list of pokemon card images
 for i in range(num_epochs):
     cum_loss = 0
 
